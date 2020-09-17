@@ -54,14 +54,14 @@ namespace TCP_Client.ViewModels
 		/// </summary>
 		private async void TcpTransmission()
 		{
-			using TCPClient Client = new TCPClient("127.0.0.1", 50000);
+			using TCPClient Client = new TCPClient();
 			byte[] sendData = Encoding.ASCII.GetBytes(SendData.Value);
 			// 想定される受信データサーズから受信データを入れる入れ物のサイズを決めておく
 			byte[] receiveData = new byte[1024];
 			// 戻り値がTrueなら正常に送受信完了
 			await Task.Run(() =>
 			{
-				if (Client.SendReceive(sendData, ref receiveData) == true)
+				if (Client.SendReceive("127.0.0.1", 50000, sendData, ref receiveData) == true)
 				{
 					// 受信した文字列データは用意している入れ物より少ない場合もあるので「.TrimEnd('\0')」する。
 					ReceptionData.Value = Encoding.ASCII.GetString(receiveData).TrimEnd('\0');

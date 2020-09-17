@@ -17,16 +17,6 @@ namespace TCP_Client
 		private const int timeOut = 5000;
 
 		/// <summary>
-		/// サーバのIPアドレス
-		/// </summary>
-		private readonly IPAddress address;
-
-		/// <summary>
-		/// サーバのポート番号
-		/// </summary>
-		private readonly int port;
-
-		/// <summary>
 		/// エラー発生時のメッセージ
 		/// </summary>
 		private readonly bool isMessage;
@@ -60,14 +50,10 @@ namespace TCP_Client
 		/// <summary>
 		/// コンストラクタ
 		/// </summary>
-		/// <param name="Address">接続するサーバのIPアドレスの文字列</param>
-		/// <param name="Port">接続するサーバのポート番号</param>
 		/// <param name="Log">ログ出力用デリゲート</param>
 		/// <param name="IsMessage">エラーメッセージ false=表示しない true=表示する</param>
-		internal TCPClient(string Address, int Port, LogDelegate Log = null, bool IsMessage = false)
+		internal TCPClient(LogDelegate Log = null, bool IsMessage = false)
 		{
-			address = IPAddress.Parse(Address);
-			port = Port;
 			isMessage = IsMessage;
 			// ログを記録する設定ならLog Classのインスタンスを生成
 			if (Log != null)
@@ -81,7 +67,7 @@ namespace TCP_Client
 		/// </summary>
 		~TCPClient()
 		{
-			// イベントの事後処理
+			// usingやDispose忘れがあるかもしれないので念のため
 			connectDone?.Dispose();
 			connectDone = null;
 			sendDone?.Dispose();
@@ -95,14 +81,13 @@ namespace TCP_Client
 		/// </summary>
 		public void Dispose()
 		{
-			// イベントの事後処理
+			// 事後処理
 			connectDone?.Dispose();
 			connectDone = null;
 			sendDone?.Dispose();
 			sendDone = null;
 			receiveDone?.Dispose();
 			receiveDone = null;
-			// これでデストラクタは呼ばれなくなるので無駄な終了処理がなくなる
 			GC.SuppressFinalize(this);
 		}
 
@@ -128,6 +113,16 @@ namespace TCP_Client
 		}
 
 		/// <summary>
+		/// 送信コールバックメソッド
+		/// </summary>
+		/// <param name="ar"></param>
+		private void SendCallback(IAsyncResult ar)
+		{
+			// 送信完了のイベントをセット
+			sendDone.Set();
+		}
+
+		/// <summary>
 		/// 受信コールバックメソッド
 		/// </summary>
 		/// <param name="ar"></param>
@@ -149,23 +144,24 @@ namespace TCP_Client
 		}
 
 		/// <summary>
-		/// 送信コールバックメソッド
-		/// </summary>
-		/// <param name="ar"></param>
-		private void SendCallback(IAsyncResult ar)
-		{
-			// 送信完了のイベントをセット
-			sendDone.Set();
-		}
-
-		/// <summary>
 		/// データ送受信
 		/// </summary>
+		/// <param name="address">接続するサーバのIPアドレス</param>
+		/// <param name="port">接続するサーバのポート番号</param>
 		/// <param name="sendData">送信するデータの配列</param>
 		/// <param name="receiveData">受信したデータを入れる配列の参照</param>
 		/// <returns></returns>
-		internal bool SendReceive(byte[] sendData, ref byte[] receiveData)
+		internal bool SendReceive(string address, int port, byte[] sendData, ref byte[] receiveData)
 		{
+			// IPアドレスのチェック
+			if (IPAddress.TryParse(address, out IPAddress serverAddress) == false)
+			{
+				logDelegate?.Invoke("IPアドレスが正しくありません。");
+				if (isMessage == true)
+					_ = MessageBox.Show("IPアドレスが正しくありません。", "データ送受信", MessageBoxButton.OK, MessageBoxImage.Error);
+				return false;
+			}
+
 			// 送信データのチェック
 			if (sendData == null || sendData.Length == 0)
 			{
@@ -178,11 +174,11 @@ namespace TCP_Client
 			bool result = false;
 			try
 			{
-				using Socket client = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+				using Socket client = new Socket(serverAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 				try
 				{
 					// サーバへ接続
-					_ = client.BeginConnect(new IPEndPoint(address, port), new AsyncCallback(ConnectCallback), client);
+					_ = client.BeginConnect(new IPEndPoint(serverAddress, port), new AsyncCallback(ConnectCallback), client);
 					// 接続が完了するまで待機
 					if (connectDone.Wait(timeOut) == true)
 					{
@@ -230,7 +226,7 @@ namespace TCP_Client
 				}
 				finally
 				{
-					//閉じる前の接続ソケットですべてのデータが送受信される
+					//Socketでの送受信を無効にする
 					client.Shutdown(SocketShutdown.Both);
 					// ソケット接続を閉じ、ソケットを再利用できるようにする。再利用できる場合は true それ以外の場合は false
 					client.Disconnect(true);
